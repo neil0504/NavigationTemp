@@ -1,30 +1,37 @@
 package com.example.navigationtemp
 
-import androidx.appcompat.app.AppCompatActivity
-import android.os.Bundle
 import android.Manifest
 import android.annotation.SuppressLint
+import android.content.ContentValues
 import android.content.pm.PackageManager
+import android.graphics.BitmapFactory
+import android.media.Image
+import android.os.Build
+import android.os.Bundle
+import android.os.SystemClock.sleep
+import android.provider.MediaStore
 import android.util.Log
+import android.view.View
 import android.widget.Toast
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
-import java.util.concurrent.Executors
+import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.video.*
 import androidx.camera.video.VideoCapture
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import androidx.core.content.PermissionChecker
+import com.example.navigationtemp.databinding.ActivityCameraXpreviewBinding
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 import java.nio.ByteBuffer
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.ExecutorService
-import android.provider.MediaStore
+import java.util.concurrent.Executors
+import kotlin.concurrent.thread
 
-import android.content.ContentValues
-import android.os.Build
-import com.example.navigationtemp.databinding.ActivityCameraXpreviewBinding
-import com.example.navigationtemp.databinding.ActivityMainBinding
 
 typealias LumaListener = (luma: Double) -> Unit
 lateinit var viewBinding: ActivityCameraXpreviewBinding
@@ -35,6 +42,7 @@ class CameraXPreview : AppCompatActivity() {
 
     private var videoCapture: VideoCapture<Recorder>? = null
     private var recording: Recording? = null
+    var cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
 
     private lateinit var cameraExecutor: ExecutorService
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -52,9 +60,20 @@ class CameraXPreview : AppCompatActivity() {
         // Set up the listeners for take photo and video capture buttons
         viewBinding.imageCaptureButton.setOnClickListener { takePhoto() }
         viewBinding.videoCaptureButton.setOnClickListener { captureVideo() }
+        viewBinding.switchCamera.setOnClickListener { switchCamera() }
 
         cameraExecutor = Executors.newSingleThreadExecutor()
     }
+
+    private fun switchCamera() {
+        if(cameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA){
+            cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+        }else{
+            cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
+        }
+        startCamera()
+    }
+
     private fun takePhoto() {
         // Get a stable reference of the modifiable image capture use case
         val imageCapture = imageCapture ?: return
@@ -77,24 +96,69 @@ class CameraXPreview : AppCompatActivity() {
                 contentValues)
             .build()
 
+        val waitFiveSeconds = WaitFiveSeconds()
+        waitFiveSeconds.execute()
         // Set up image capture listener, which is triggered after photo has
         // been taken
-        imageCapture.takePicture(
-            outputOptions,
-            ContextCompat.getMainExecutor(this),
-            object : ImageCapture.OnImageSavedCallback {
-                override fun onError(exc: ImageCaptureException) {
-                    Log.e(TAG, "Photo capture failed: ${exc.message}", exc)
-                }
+//        imageCapture.takePicture(
+//            outputOptions,
+//            ContextCompat.getMainExecutor(this),
+//            object : ImageCapture.OnImageSavedCallback {
+//                override fun onError(exc: ImageCaptureException) {
+//                    Log.e(TAG, "Photo capture failed: ${exc.message}", exc)
+//                }
+//
+//                override fun
+//                        onImageSaved(output: ImageCapture.OutputFileResults){
+//                    val msg = "Photo capture succeeded: ${output.savedUri}"
+//                    Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show()
+//                    Log.d(TAG, msg)
+//                }
+//            }
+//        )
+//        val context = this
+//        GlobalScope.launch(Dispatchers.Default) {
+//            viewBinding.textView.visibility = View.VISIBLE
+//            for (i in 5 downTo 1){
+//                GlobalScope.launch(Dispatchers.Main) {
+//                    viewBinding.textView.text = i.toString()
+//                }
+//                sleep(1000)
+//            }
+//            viewBinding.textView.visibility = View.INVISIBLE
+//            imageCapture.takePicture(
+//                ContextCompat.getMainExecutor(context),
+//                object : ImageCapture.OnImageCapturedCallback() {
+//                    override fun onError(exc: ImageCaptureException) {
+//                        Log.e(TAG, "Photo capture failed: ${exc.message}", exc)
+//                    }
+//
+//                    override fun onCaptureSuccess(image: ImageProxy) {
+//                        Toast.makeText(this@CameraXPreview, "image captured", Toast.LENGTH_SHORT).show()
+//                        val planes = image.planes
+//                        val buffer = planes[0].buffer
+//                        val data = ByteArray(buffer.capacity())
+//                        Log.d(TAG, "onCaptureSuccess: $data")
+//                        buffer.get(data)
+////                    val bMap = CameraImageUtils.ByteArray
+////                    val bMap = BitmapFactory.decodeFile(image)
+////                    val drawable: Drawable = ImageDecoder.decodeDrawable(image)
+//                        val bitmap = BitmapFactory.decodeByteArray(data, 0, data.size)
+//                        viewBinding.imageView.setImageBitmap(bitmap)
+//                        image.close()
+//                    }
+//
+////                override fun
+////                        onImageSaved(output: ImageCapture.OutputFileResults){
+////                    val msg = "Photo capture succeeded: ${output.savedUri}"
+////                    Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show()
+////                    Log.d(TAG, msg)
+////                }
+//                }
+//            )
+//        }
 
-                override fun
-                        onImageSaved(output: ImageCapture.OutputFileResults){
-                    val msg = "Photo capture succeeded: ${output.savedUri}"
-                    Toast.makeText(baseContext, msg, Toast.LENGTH_SHORT).show()
-                    Log.d(TAG, msg)
-                }
-            }
-        )
+
     }
 
     private fun captureVideo() {
@@ -188,23 +252,25 @@ class CameraXPreview : AppCompatActivity() {
             imageCapture = ImageCapture.Builder()
                 .build()
 //
-            val imageAnalyzer = ImageAnalysis.Builder()
-                .build()
-                .also {
-                    it.setAnalyzer(cameraExecutor, LuminosityAnalyzer { luma ->
-                        Log.d(TAG, "Average luminosity: $luma")
-                    })
-                }
+//            val imageAnalyzer = ImageAnalysis.Builder()
+//                .build()
+//                .also {
+//                    it.setAnalyzer(cameraExecutor, LuminosityAnalyzer { luma ->
+////                        Log.d(TAG, "Average luminosity: $luma")
+//                    })
+//                }
             // Select back camera as a default
-            val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
+//            val cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
 
             try {
                 // Unbind use cases before rebinding
                 cameraProvider.unbindAll()
 
                 // Bind use cases to camera
+//                cameraProvider
+//                    .bindToLifecycle(this, cameraSelector, preview, imageCapture, imageAnalyzer)
                 cameraProvider
-                    .bindToLifecycle(this, cameraSelector, preview, imageCapture, imageAnalyzer)
+                    .bindToLifecycle(this, cameraSelector, preview, imageCapture)
 
             } catch(exc: Exception) {
                 Log.e(TAG, "Use case binding failed", exc)
@@ -254,27 +320,74 @@ class CameraXPreview : AppCompatActivity() {
         }
     }
 
-    private class LuminosityAnalyzer(private val listener: LumaListener) : ImageAnalysis.Analyzer {
+//    private class LuminosityAnalyzer(private val listener: LumaListener) : ImageAnalysis.Analyzer {
+//
+//        private fun ByteBuffer.toByteArray(): ByteArray {
+//            rewind()    // Rewind the buffer to zero
+//            val data = ByteArray(remaining())
+//            get(data)   // Copy the buffer into a byte array
+//            return data // Return the byte array
+//        }
+//
+//        @SuppressLint("UnsafeOptInUsageError")
+//        override fun analyze(image: ImageProxy) {
+////            Log.d(TAG, "Image format = ${image.image?.format}")
+//            val buffer = image.planes[0].buffer
+//            val data = buffer.toByteArray()
+////            viewBinding.imageView.setImageDrawable(data)
+//            val pixels = data.map { it.toInt() and 0xFF }
+//            val luma = pixels.average()
+//
+//            listener(luma)
+//
+//            image.close()
+//        }
+//    }
 
-        private fun ByteBuffer.toByteArray(): ByteArray {
-            rewind()    // Rewind the buffer to zero
-            val data = ByteArray(remaining())
-            get(data)   // Copy the buffer into a byte array
-            return data // Return the byte array
+    inner class WaitFiveSeconds: CoroutineAsyncTask_CameraPreview<Void, Int, Void>(){
+
+        override fun doInBackground(vararg params: Void) {
+            for(i in 5 downTo 1){
+                publishProgress(i)
+                Thread.sleep(1000)
+            }
+
         }
 
-        @SuppressLint("UnsafeOptInUsageError")
-        override fun analyze(image: ImageProxy) {
-            Log.d(TAG, "Image format = ${image.image?.format}")
-            val buffer = image.planes[0].buffer
-            val data = buffer.toByteArray()
-//            viewBinding.imageView.setImageDrawable(data)
-            val pixels = data.map { it.toInt() and 0xFF }
-            val luma = pixels.average()
-
-            listener(luma)
-
-            image.close()
+        override fun onPreExecute() {
+            viewBinding.textView.visibility = View.VISIBLE
+            viewBinding.textView.text = "5"
         }
+
+        override fun onPostExecute() {
+            imageCapture?.takePicture(
+                ContextCompat.getMainExecutor(this@CameraXPreview),
+                object : ImageCapture.OnImageCapturedCallback() {
+                    override fun onError(exc: ImageCaptureException) {
+                        Log.e(TAG, "Photo capture failed: ${exc.message}", exc)
+                        Toast.makeText(this@CameraXPreview, "Error Capturing Image", Toast.LENGTH_SHORT).show()
+                    }
+
+                    override fun onCaptureSuccess(image: ImageProxy) {
+                        Toast.makeText(this@CameraXPreview, "image captured", Toast.LENGTH_SHORT).show()
+                        val planes = image.planes
+                        val buffer = planes[0].buffer
+                        val data = ByteArray(buffer.capacity())
+                        Log.d(TAG, "onCaptureSuccess: $data")
+                        buffer.get(data)
+                        val bitmap = BitmapFactory.decodeByteArray(data, 0, data.size)
+                        viewBinding.imageView.setImageBitmap(bitmap)
+                        image.close()
+                        Toast.makeText(this@CameraXPreview, "Image Captured", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            )
+            viewBinding.textView.visibility = View.INVISIBLE
+        }
+
+        override fun onProgressUpdate(vararg values: Int?) {
+            viewBinding.textView.text = values[0].toString()
+        }
+
     }
 }
